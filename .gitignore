@@ -6,3 +6,4 @@
 
 # Logs
 *.log
+ssh-abuse-detector/test.log
