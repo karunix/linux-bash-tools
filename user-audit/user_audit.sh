@@ -1,5 +1,7 @@
 #!/bin/bash
 
+WARNINGS=0
+
 echo "User Audit Starting..."
 echo
 echo "Checking for UID 0 accounts..."
@@ -45,6 +47,7 @@ if [ -z "$SYSTEM_INTERACTIVE" ]; then
 else
 	echo "WARNING: System accounts with interactive shells:"
 	echo "$SYSTEM_INTERACTIVE"
+	WARNINGS=$((WARNINGS + 1))
 fi
 
 echo
@@ -75,4 +78,13 @@ for user in $(awk -F: '$3 >= 1000 && $7 ~ /(bash|sh)$/ {print $1}' /etc/passwd);
 	echo "Last login for $user:"
 	lastlog -u "$user" | tail -n 1
 	echo
+	echo "Audit Summary:"
+	if [ "$WARNINGS" -eq 0 ]; then
+		echo "STATUS: PASS - No critical warnings detected."
+		exit 0
+	else
+		echo "STATUS: WARNING - $WARNINGS issue(s) detected."
+		exit 1
+	fi
+
 done
