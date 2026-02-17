@@ -63,3 +63,17 @@ lastlog -u <username>
 
 Review:
 Investigate unexpected or recent login activity.
+
+Summary section
+At the very end of your script, add:
+
+echo "Audit Summary:"
+if [ "$WARNINGS" -eq 0 ]; then
+    echo "STATUS: PASS - No critical warnings detected."
+    exit 0
+else
+    echo "STATUS: WARNING - $WARNINGS issue(s) detected."
+    exit 1
+fi
+
+
