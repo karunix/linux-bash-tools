@@ -188,7 +188,7 @@ sudo systemctl enable --now fail2ban
 
 Create or edit config:
 
-sudo nano /etc/fail2ban/jail.local
+sudo micro /etc/fail2ban/jail.local
 
 Example minimal configuration:
 
