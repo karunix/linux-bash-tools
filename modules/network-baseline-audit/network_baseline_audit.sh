@@ -1,111 +1,115 @@
 #!/bin/bash
 
+# ======================================
+# Linux Bash Tools - Network Baseline Audit
+# ======================================
+
 warning_count=0
 
-echo "===== Network Baseline Audit ====="
-echo
+echo "======================================"
+echo " Linux Bash Tools - Network Baseline"
+echo "======================================"
 
 ########################################
-# 1. Interfaces & IP Addressing
+# 1. IP & Interface Status
 ########################################
-echo "== Network Interfaces & IP Addresses =="
-
-ip -4 addr show | grep inet
 echo
+echo "== IP & Interface Status =="
 
-# Exclude private, loopback, and link-local ranges
-public_ips=$(ip -4 addr show | awk '/inet / {print $2}' | cut -d/ -f1 | \
-grep -Ev '^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)')
+ip -brief addr show 2>/dev/null
 
-if [ -n "$public_ips" ]; then
-    echo "WARNING: Public IPv4 address detected:"
-    echo "$public_ips"
+active_ifaces=$(ip -brief link show up 2>/dev/null | grep -v LOOPBACK | wc -l)
+
+if [ "$active_ifaces" -eq 0 ]; then
+    echo "WARNING: No active network interfaces detected."
     warning_count=$((warning_count+1))
-else
-    echo "No public IPv4 addresses detected."
 fi
 
 ########################################
-# 2. Default Gateway & Routing
+# 2. Routing & Gateway
 ########################################
 echo
 echo "== Routing Table =="
 
-default_routes=$(ip route | grep '^default')
-echo "$default_routes"
+ip route show 2>/dev/null
 
-route_count=$(echo "$default_routes" | wc -l)
+default_route=$(ip route | grep "^default" | head -n1)
 
-if [ "$route_count" -eq 0 ]; then
-    echo "WARNING: No default route configured."
+if [ -z "$default_route" ]; then
+    echo "WARNING: No default gateway configured."
     warning_count=$((warning_count+1))
-elif [ "$route_count" -gt 1 ]; then
-    echo "WARNING: Multiple default routes detected."
-    warning_count=$((warning_count+1))
+else
+    gateway=$(echo "$default_route" | awk '{print $3}')
+    interface=$(echo "$default_route" | awk '{print $5}')
+
+    echo
+    echo "Default Gateway: $gateway"
+    echo "Interface Used:  $interface"
+
+    # Check if interface is UP
+    ip link show "$interface" | grep -q "state UP"
+    if [ $? -ne 0 ]; then
+        echo "WARNING: Default route interface is DOWN."
+        warning_count=$((warning_count+1))
+    fi
+
+    # Attempt reachability test
+    ping -c1 -W1 "$gateway" >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "WARNING: Gateway did not respond to ICMP (may be blocked)."
+        warning_count=$((warning_count+1))
+    fi
 fi
 
 ########################################
-# 3. DNS Configuration
+# 3. DNS Resolution
 ########################################
 echo
-echo "== DNS Configuration (/etc/resolv.conf) =="
+echo "== DNS Configuration =="
 
 if [ -f /etc/resolv.conf ]; then
-    nameservers=$(grep '^nameserver' /etc/resolv.conf)
-    echo "$nameservers"
-
-    ns_count=$(echo "$nameservers" | wc -l)
-
-    if [ "$ns_count" -eq 0 ]; then
-        echo "WARNING: No nameservers configured."
-        warning_count=$((warning_count+1))
-    elif [ "$ns_count" -gt 3 ]; then
-        echo "WARNING: More than 3 nameservers configured."
-        warning_count=$((warning_count+1))
-    fi
+    grep nameserver /etc/resolv.conf
 else
     echo "WARNING: /etc/resolv.conf not found."
     warning_count=$((warning_count+1))
 fi
 
-########################################
-# 4. IP Forwarding
-########################################
-echo
-echo "== IP Forwarding =="
-
-ipv4_forward=$(sysctl -n net.ipv4.ip_forward 2>/dev/null)
-ipv6_forward=$(sysctl -n net.ipv6.conf.all.forwarding 2>/dev/null)
-
-echo "IPv4 Forwarding: $ipv4_forward"
-echo "IPv6 Forwarding: $ipv6_forward"
-
-if [ "$ipv4_forward" -eq 1 ] || [ "$ipv6_forward" -eq 1 ]; then
-    echo "WARNING: IP forwarding is enabled."
+getent hosts google.com >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "WARNING: DNS resolution failed."
     warning_count=$((warning_count+1))
 fi
 
 ########################################
-# 5. Reverse Path Filtering
+# 4. Reverse Path Filtering (rp_filter)
 ########################################
 echo
-echo "== Reverse Path Filtering =="
+echo "== Reverse Path Filtering (rp_filter) =="
 
 rp_filter=$(sysctl -n net.ipv4.conf.all.rp_filter 2>/dev/null)
-echo "rp_filter: $rp_filter"
 
-if [ "$rp_filter" -eq 0 ]; then
-    echo "WARNING: rp_filter disabled."
+if [[ "$rp_filter" =~ ^[0-9]+$ ]]; then
+    echo "rp_filter value: $rp_filter"
+    if [ "$rp_filter" -eq 0 ]; then
+        echo "WARNING: rp_filter is disabled."
+        warning_count=$((warning_count+1))
+    fi
+else
+    echo "WARNING: Unable to determine rp_filter value."
     warning_count=$((warning_count+1))
 fi
 
 ########################################
-# 6. Listening TCP Services (Summary)
+# 5. Listening TCP Services
 ########################################
 echo
-echo "== Listening TCP Service Count =="
+echo "== Listening TCP Services =="
 
-tcp_count=$(ss -tln 2>/dev/null | grep LISTEN | wc -l)
+ss -tln 2>/dev/null
+
+tcp_count=$(ss -tln 2>/dev/null | awk '/LISTEN/ {count++} END {print count+0}')
+
+echo
 echo "Listening TCP sockets: $tcp_count"
 
 if [ "$tcp_count" -gt 10 ]; then
@@ -114,10 +118,30 @@ if [ "$tcp_count" -gt 10 ]; then
 fi
 
 ########################################
+# 6. Public Bind Detection
+########################################
+echo
+echo "== Public Bind Detection =="
+
+public_binds=$(ss -tln 2>/dev/null | awk '
+/LISTEN/ && ($4 ~ /^0\.0\.0\.0:/ || $4 ~ /^\*:/ || $4 ~ /^\[::\]:/ || $4 ~ /^:::/) {print}
+')
+
+if [ -n "$public_binds" ]; then
+    echo "WARNING: Services bound to all interfaces:"
+    echo "$public_binds"
+    warning_count=$((warning_count+1))
+else
+    echo "No publicly bound TCP services detected."
+fi
+
+########################################
 # Summary
 ########################################
 echo
-echo "===== Audit Summary ====="
+echo "======================================"
+echo " Audit Summary"
+echo "======================================"
 
 if [ "$warning_count" -gt 0 ]; then
     echo "STATUS: WARNING - Network hardening improvements recommended."
