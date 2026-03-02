@@ -10,7 +10,7 @@ sudo mkdir -p "$INSTALL_DIR"
 
 echo "[*] Copying tools..."
 sudo cp -r ../tools "$INSTALL_DIR/"
-
+sudo cp ../VERSION "$INSTALL_DIR/"
 echo "[*] Setting executable permissions..."
 sudo find "$INSTALL_DIR" -type f -name "*.sh" -exec chmod +x {} \;
 
