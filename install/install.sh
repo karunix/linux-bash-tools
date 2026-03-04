@@ -8,11 +8,12 @@ BIN_DIR="/usr/local/bin"
 echo "[*] Creating install directory..."
 sudo mkdir -p "$INSTALL_DIR"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 echo "[*] Copying tools..."
-sudo cp -r ../tools "$INSTALL_DIR/"
-sudo cp ../VERSION "$INSTALL_DIR/"
-echo "[*] Setting executable permissions..."
-sudo find "$INSTALL_DIR" -type f -name "*.sh" -exec chmod +x {} \;
+sudo cp -r "$REPO_ROOT/tools" "$INSTALL_DIR/"
+sudo cp "$REPO_ROOT/VERSION" "$INSTALL_DIR/"
 
 echo "[*] Creating symlinks..."
 for script in $(find "$INSTALL_DIR/tools/core" -type f -name "*.sh"); do
